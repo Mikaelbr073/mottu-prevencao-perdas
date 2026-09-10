@@ -24,7 +24,7 @@ md("""## Sumário
 | Seção | O que tem |
 |---|---|
 | **1. A resposta em uma página** | As três perguntas do case, respondidas com número |
-| **2. Qualidade da base** | Integridade e variáveis descartadas |
+| **2. Base** | Integridade, variáveis fora da regra, alvo |
 | **3. Pergunta 1 — Sinais** | Isolado vs. combinado, matriz 2×2, lift |
 | **4. Pergunta 2 — Janela** | 9 dias de mediana; SLA de 72h |
 | **5. Pergunta 3 — Grupos** | G1/G2/G3, esforço e curva de capacidade |
@@ -237,9 +237,7 @@ print(f"G1 = {int(g1.sum())} casos em 6 meses = {g1.sum()/SEMANAS:.1f} por seman
 
 # ============================================================ 2. DADOS
 md("""---
-# 2. Qualidade da base e variáveis descartadas""")
-
-md("""### 2.1 Integridade""")
+# 2. Base""")
 
 code('''checagens = [
     ("linhas",                        len(df),                                          "500 esperadas"),
@@ -260,64 +258,36 @@ vazios = int(df.dia_primeiro_sinal.isna().sum())
 print(f"\\ndia_primeiro_sinal vazio: {vazios} — nao e falha, e a marca de "
       f"'nenhum sinal de risco'")''')
 
-md("""### 2.2 Variáveis descartadas
-
-**`dias_locacao` — vazamento.** É a duração contratada; `dia_desfecho` é quando
-a locação acabou de fato. As duas só batem quando a moto volta normalmente.""")
-
 code('''vaza = (df.dias_locacao - df.dia_desfecho) > 0
-tab = pd.crosstab(vaza, df.desfecho)
-tab.index = ["contrato terminou no prazo", "terminou antes do prazo"]
-display(tab)
-
 acerto = (vaza == df.RISCO).mean()
-print(f"\\nUsar so 'terminou antes do prazo' acerta o desfecho em {pct(acerto)} dos casos.")
-print("Por isso dias_locacao esta fora da analise. Nao entra em regra nenhuma.")''')
+print(f"dias_locacao fora da analise: sozinha acerta o desfecho em {pct(acerto)} dos casos (vazamento)")
 
-md("""**`jornada_impossivel` — amostra de 2.** Lidera o ranking de lift com
-100% de precisão e duas ocorrências. `device_compartilhado` tem 14.""")
-
-code('''linhas = []
+linhas = []
 for c in FLAGS + ["inad15", "inad30"]:
     m = df[c]
     n = int(m.sum())
     if n == 0:
         continue
-    linhas.append({
-        "sinal": c,
-        "n": n,
-        "precisao": df.APR[m].mean(),
-        "lift": df.APR[m].mean() / TX_APR,
-        "recall": df.APR[m].sum() / df.APR.sum(),
-    })
+    linhas.append({"sinal": c, "n": n, "precisao": df.APR[m].mean(),
+                   "lift": df.APR[m].mean() / TX_APR,
+                   "recall": df.APR[m].sum() / df.APR.sum()})
 rank = pd.DataFrame(linhas).sort_values("lift", ascending=False).reset_index(drop=True)
-rank["veredito"] = np.where(rank.n < 20, "amostra pequena demais", "usavel")
+rank["uso"] = np.where(rank.n < 20, "fora (amostra < 20)", "na regra")
 display(rank.style.format({"precisao": "{:.1%}", "lift": "{:.1f}x", "recall": "{:.1%}"}))
 
-print("jornada_impossivel: lidera o ranking com n=2. Descartado.")
-print("device_compartilhado: n=14. Sugestivo, nao conclusivo. Fora de regra.")''')
-
-md("""**Flags são do contrato inteiro, não do dia.** Isso normalmente criaria
-viés de exposição. Testei: as taxas são planas ao longo da duração, então dá
-para comparar direto. É artefato do dado sintético.""")
-
-code('''dev = df[df.desfecho == "DEVOLVIDA"].copy()
+dev = df[df.desfecho == "DEVOLVIDA"].copy()
 dev["faixa"] = pd.qcut(dev.dia_desfecho, 4)
 expo = dev.groupby("faixa", observed=True).agg(
-    n=("APR", "size"),
-    parou_48h=("parou_48h", "mean"),
-    sem_ping_24h=("sem_ping_24h", "mean"),
-    inad_media=("inad", "mean"),
-)
-display(expo.style.format({"parou_48h": "{:.1%}", "sem_ping_24h": "{:.1%}",
-                           "inad_media": "{:.1f}"}))
-print("Taxas planas entre o contrato mais curto e o mais longo: sem vies de exposicao.")''')
+    n=("APR", "size"), parou_48h=("parou_48h", "mean"),
+    sem_ping_24h=("sem_ping_24h", "mean"), inad_media=("inad", "mean"))
+display(expo.style.format({"parou_48h": "{:.1%}", "sem_ping_24h": "{:.1%}", "inad_media": "{:.1f}"}))
+print("taxa de flag plana entre contrato curto e longo: sem vies de exposicao")''')
 
-md("""### 2.3 Definição do alvo
+md("""Fora da regra: `dias_locacao` (vazamento), `jornada_impossivel` (n=2),
+`device_compartilhado` (n=14), perfil demográfico (lift ≈ 1).
 
-`RECUPERADA` é desfecho tratado — sem acionamento teria virado apropriação.
-
-**Alvo = `APROPRIADA + RECUPERADA` (16%).** `APROPRIADA` isolada (4,8%) é a
+**Alvo = `APROPRIADA + RECUPERADA` (16%).** `RECUPERADA` é desfecho tratado —
+sem acionamento teria virado apropriação. `APROPRIADA` isolada (4,8%) é a
 métrica de resultado.""")
 
 code('''fig, ax = plt.subplots(figsize=(7.5, 1.9))
@@ -375,9 +345,6 @@ display(comp.style.format({"taxa_apropriacao": "{:.1%}", "taxa_risco": "{:.1%}"}
 
 print(f"base de comparacao: {pct(TX_APR)} de apropriacao")''')
 
-md("""Três condições com **zero perdas**: moto parada sem estar muda (71 casos),
-blindagem violada sem telemetria ruim (25) e inadimplência ≥30d sozinha (24).""")
-
 md("""### 3.2 Matriz `parou_48h` × `sem_ping_24h`""")
 
 code('''fig, ax = plt.subplots(figsize=(6.2, 4.2))
@@ -406,9 +373,6 @@ for s in ax.spines.values():
 plt.tight_layout(); plt.show()
 
 print(f"Uma celula sozinha concentra {int(df.APR[tel2].sum())} das {int(df.APR.sum())} perdas da base.")''')
-
-md("""Três células ficam perto de zero; a quarta vai a 43,8%. Alarme em `parou_48h`
-sozinho gera 71 acionamentos sem nenhuma perda.""")
 
 md("""### 3.3 Lift por sinal""")
 
@@ -617,13 +581,8 @@ ax.set_title("O time acerta onde não importa e erra onde importa", loc="left")
 limpa(ax, x=False)
 plt.tight_layout(); plt.show()''')
 
-md("""Sucesso alto no G3 (risco quase zero) e baixo no G1 (onde 9 em cada 10
-vira perda ou busca). Não é falta de gente — é ordem de fila: com 9,7 sinais
-por semana em ordem de chegada, o caso crítico entra atrás de seis inofensivos.
-
-Ressalva: `RECUPERADA` só existe porque a equipe agiu, então o contrafactual do
-G3 não é observável. O que é sólido é a assimetria — **19 das 24 perdas estão
-no G1**.""")
+md("""Ressalva: `RECUPERADA` só existe porque a equipe agiu — o contrafactual do
+G3 não é observável. O que é sólido: **19 das 24 perdas estão no G1**.""")
 
 md("""### 5.4 Onde cortar a fila""")
 
@@ -666,9 +625,6 @@ plt.tight_layout(); plt.show()
 display(curva[curva["top N"].isin([25, 30, 40, 65, 130, 253])]
         .style.format({"% carteira": "{:.1%}", "casos/semana": "{:.1f}",
                        "recall risco": "{:.0%}", "recall perdas": "{:.0%}"}))''')
-
-md("""A curva satura no **top 40**: daí em diante, dobrar a fila não captura
-nenhuma perda a mais. É a justificativa numérica do corte.""")
 
 md("""### Resposta
 
@@ -784,9 +740,6 @@ ax.set_ylim(0, 0.058)
 ax.set_title("Taxa de apropriação por cenário de melhora no G1", loc="left")
 limpa(ax, x=False)
 plt.tight_layout(); plt.show()''')
-
-md("""No cenário base a taxa volta para perto do nível anterior à alta, com
-2,5 acionamentos/semana de esforço.""")
 
 md("""### 7.3 Cartão de triagem""")
 
