@@ -5,3 +5,8 @@ __pycache__/
 .DS_Store
 .~lock.*#
 ~$*
+
+# arquivos de trabalho interno — nao vao para o repo publico
+Problema.txt
+MEMORY.md
+analise/
