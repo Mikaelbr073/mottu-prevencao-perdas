@@ -13,21 +13,9 @@ def code(s): cells.append(("code", s))
 # ============================================================ CAPA
 md("""# Prevenção de Perdas — Mottu
 
-### Case 1 · Análise de apropriação indébita em locações
+### Case 1 · Apropriação indébita em locações
 
----
-
-**A pergunta que este notebook responde:** a equipe de RecOps não consegue
-acompanhar todas as locações que dão sinal. Quem ela deve acompanhar, e quando
-deve agir?
-
-**Resposta curta:** o grupo que concentra as perdas tem **1,2 caso por semana**.
-A Mottu não tem problema de capacidade. Tem problema de ordem na fila.
-
----
-
-*Base: 500 locações encerradas em 6 meses. Dados sintéticos, criados para este
-processo seletivo.*""")
+Base: 500 locações encerradas em 6 meses. Dados sintéticos.""")
 
 
 # ============================================================ SUMARIO
@@ -36,28 +24,25 @@ md("""## Sumário
 | Seção | O que tem |
 |---|---|
 | **1. A resposta em uma página** | As três perguntas do case, respondidas com número |
-| **2. O que dá e o que não dá para usar** | Integridade da base e as armadilhas que rejeitei |
-| **3. Pergunta 1 — Quais sinais predizem** | Sinal isolado é ruído; a conjunção é que prediz |
-| **4. Pergunta 2 — A janela** | 9 dias de mediana, e o SLA que isso impõe |
-| **5. Pergunta 3 — Os grupos** | G1/G2/G3, o esforço de cada um e a curva de capacidade |
-| **6. Metas e critérios** | O que eu me comprometo a atingir e como se mede |
-| **7. Além do que foi pedido** | Um bug de detecção, a projeção e o cartão de triagem |
-| **8. Limitações** | Onde esta análise não alcança |
-| **9. Apêndice técnico** | Tabelas completas e reprodutibilidade |
+| **2. Qualidade da base** | Integridade e variáveis descartadas |
+| **3. Pergunta 1 — Sinais** | Isolado vs. combinado, matriz 2×2, lift |
+| **4. Pergunta 2 — Janela** | 9 dias de mediana; SLA de 72h |
+| **5. Pergunta 3 — Grupos** | G1/G2/G3, esforço e curva de capacidade |
+| **6. Metas e critérios** | Metas, SLA e gatilhos de revisão |
+| **7. Extras** | Falha de detecção, projeção, cartão de triagem |
+| **8. Limitações** | |
+| **9. Apêndice** | Tabelas completas |
 
 ---
 
-**Como ler:** o texto conta a história e os números aparecem prontos. Todo
-número sai do código da célula acima dele — nada foi digitado à mão. Quem
-quiser auditar, o apêndice tem as tabelas completas.""")
+Todo número sai do código da célula acima dele.
+
+**O detalhamento completo está no PDF.** Aqui ficam os números e os gráficos.""")
 
 
 # ============================================================ SETUP
 md("""---
-## Preparação
-
-Duas células de encanamento. Se estiver no Colab e a base não for encontrada,
-a segunda abre o seletor de arquivos.""")
+## Preparação""")
 
 code('''import io, os, sys, textwrap
 import numpy as np
@@ -112,40 +97,20 @@ def pct(v, casas=1):
 
 print("bibliotecas carregadas")''')
 
-code('''# Onde a base pode estar, em ordem de tentativa.
-ARQUIVO = "dados -PrevencaoPerdas_Base.xlsx"
-RAW_URL = ""   # preencher com a URL raw do GitHub quando o repo existir
+code('''ARQUIVO = "dados -PrevencaoPerdas_Base.xlsx"
+RAW_URL = ("https://raw.githubusercontent.com/Mikaelbr073/"
+           "mottu-prevencao-perdas/main/dados%20-PrevencaoPerdas_Base.xlsx")
 
 def carrega_base():
-    candidatos = [
-        ARQUIVO,
-        os.path.join("..", ARQUIVO),
-        os.path.join("/content", ARQUIVO),
-        os.path.join("/content/drive/MyDrive", ARQUIVO),
-    ]
-    for c in candidatos:
+    for c in [ARQUIVO, os.path.join("..", ARQUIVO), os.path.join("/content", ARQUIVO)]:
         if os.path.exists(c):
-            print(f"base encontrada em: {c}")
             return pd.read_excel(c, sheet_name="Dados")
-
-    if RAW_URL:
-        try:
-            print("baixando a base...")
-            return pd.read_excel(RAW_URL, sheet_name="Dados")
-        except Exception as e:
-            print(f"download falhou ({e}); tentando upload manual")
-
     try:
+        return pd.read_excel(RAW_URL, sheet_name="Dados")
+    except Exception:
         from google.colab import files
-        print("Selecione o arquivo .xlsx da base:")
         subiu = files.upload()
-        nome = list(subiu.keys())[0]
-        return pd.read_excel(io.BytesIO(subiu[nome]), sheet_name="Dados")
-    except ImportError:
-        raise FileNotFoundError(
-            "Base nao encontrada. Coloque o .xlsx ao lado do notebook "
-            "ou preencha RAW_URL."
-        )
+        return pd.read_excel(io.BytesIO(subiu[list(subiu)[0]]), sheet_name="Dados")
 
 df = carrega_base()
 print(f"{len(df)} locacoes, {df.shape[1]} colunas")''')
@@ -181,44 +146,25 @@ print(f"risco       : {pct(TX_RISCO)}   ({df.RISCO.sum()} de {len(df)})")''')
 
 # ============================================================ 1. RESPOSTA
 md("""---
-# 1. A resposta em uma página
+# 1. Resposta em uma página
 
-Se você só ler esta seção, tem as três respostas.
+**1 · Sinais.** Nenhum sinal isolado prediz. `parou_48h` sozinho: 0 perdas em 71
+casos. Inadimplência ≥30d sozinha: 0 em 24. O par `parou_48h` + `sem_ping_24h`
+leva a 43,8% de apropriação contra base de 4,8%; com inadimplência ≥30d, 81,2%.
 
-### Pergunta 1 — Quais sinais melhor predizem a apropriação?
+**2 · Janela.** Mediana de 9 dias, todas entre o 5º e o 12º. Nenhuma perda antes
+do 3º dia, o que fixa o **SLA em 72h**. Em 7 dias, 26% já foram perdidas.
 
-**Nenhum sinal isolado prediz.** Moto parada por 48h, sozinha, deu **zero
-apropriação em 71 casos**. Inadimplência acima de 30 dias, sozinha, também deu
-zero em 24 casos.
+**3 · Grupos.**
 
-O que prediz é a **conjunção de moto imobilizada com rastreador mudo**:
-`parou_48h` + `sem_ping_24h` juntos levam a apropriação em **43,8%** dos casos,
-contra uma base de 4,8%. Com inadimplência de 30 dias ou mais em cima, vai a
-**81,2%**.
-
-A inadimplência é amplificador, não gatilho.
-
-### Pergunta 2 — Qual é a janela entre o primeiro sinal e a perda?
-
-**Mediana de 9 dias.** Todas as 23 perdas com sinal aconteceram entre o quinto
-e o décimo segundo dia — nenhuma antes, nenhuma depois.
-
-Para o acionamento isso significa um **SLA de 72 horas**. Nenhuma perda ocorreu
-até o terceiro dia, então agir dentro desse prazo chega antes de todas elas.
-Com 7 dias, 26% já foram perdidas.
-
-### Pergunta 3 — Quais grupos de acionamento?
-
-| grupo | regra | casos/semana | risco | o que fazer |
+| grupo | regra | casos/semana | risco | ação |
 |---|---|---|---|---|
-| **G1 Crítico** | parada + sem ping + (inadimplência ≥15d ou blindagem) | **1,2** | 90% | contato ativo em 72h, busca preparada |
-| **G2 Alto** | dois sinais, sem agravante | 1,3 | 54% | contato em 5 dias |
-| **G3 Vigiar** | um sinal isolado | 7,2 | 17% | régua automática, sem gente |
+| **G1** | parada + sem ping + (inad ≥15d ou blindagem) | **1,2** | 90% | contato em 72h + busca preparada |
+| **G2** | dois sinais, sem agravante | 1,3 | 54% | contato em 5 dias |
+| **G3** | um sinal isolado | 7,2 | 17% | régua automática |
 
-**O G1 é 1,2 caso por semana.** Isso é o ponto central deste trabalho: o grupo
-onde estão 19 das 24 perdas cabe em qualquer capacidade. Ele não é atendido hoje
-porque está afogado numa fila de 9,7 casos semanais atendida por ordem de
-chegada.""")
+G1 concentra 19 das 24 perdas e cabe em 1,2 caso/semana. Hoje ele fica atrás de
+uma fila de 9,7 atendida por ordem de chegada.""")
 
 code('''fig, axes = plt.subplots(1, 3, figsize=(12, 3.4))
 
@@ -291,14 +237,9 @@ print(f"G1 = {int(g1.sum())} casos em 6 meses = {g1.sum()/SEMANAS:.1f} por seman
 
 # ============================================================ 2. DADOS
 md("""---
-# 2. O que dá e o que não dá para usar
+# 2. Qualidade da base e variáveis descartadas""")
 
-Antes de responder qualquer coisa, olhei a base procurando motivo para não
-confiar nela. Achei pouco — e achei três armadilhas.""")
-
-md("""### 2.1 A base está limpa
-
-Nenhuma linha precisa de tratamento.""")
+md("""### 2.1 Integridade""")
 
 code('''checagens = [
     ("linhas",                        len(df),                                          "500 esperadas"),
@@ -319,14 +260,10 @@ vazios = int(df.dia_primeiro_sinal.isna().sum())
 print(f"\\ndia_primeiro_sinal vazio: {vazios} — nao e falha, e a marca de "
       f"'nenhum sinal de risco'")''')
 
-md("""### 2.2 Três coisas que parecem sinal e não são
+md("""### 2.2 Variáveis descartadas
 
-**Armadilha 1 — `dias_locacao` entrega a resposta.**
-
-`dias_locacao` é a duração *contratada*. `dia_desfecho` é o dia em que a locação
-de fato acabou. As duas só batem quando a moto volta normalmente. Quem usar essa
-coluna como preditor vai ter um modelo quase perfeito e completamente inútil:
-ela só existe depois que o desfecho aconteceu.""")
+**`dias_locacao` — vazamento.** É a duração contratada; `dia_desfecho` é quando
+a locação acabou de fato. As duas só batem quando a moto volta normalmente.""")
 
 code('''vaza = (df.dias_locacao - df.dia_desfecho) > 0
 tab = pd.crosstab(vaza, df.desfecho)
@@ -337,11 +274,8 @@ acerto = (vaza == df.RISCO).mean()
 print(f"\\nUsar so 'terminou antes do prazo' acerta o desfecho em {pct(acerto)} dos casos.")
 print("Por isso dias_locacao esta fora da analise. Nao entra em regra nenhuma.")''')
 
-md("""**Armadilha 2 — o preditor perfeito com n = 2.**
-
-`jornada_impossivel` tem 100% de precisão e o maior lift da base inteira. E tem
-duas ocorrências. Duas. Colocar isso no topo de um ranking é o erro que a base
-parece ter sido montada para provocar.""")
+md("""**`jornada_impossivel` — amostra de 2.** Lidera o ranking de lift com
+100% de precisão e duas ocorrências. `device_compartilhado` tem 14.""")
 
 code('''linhas = []
 for c in FLAGS + ["inad15", "inad30"]:
@@ -363,15 +297,9 @@ display(rank.style.format({"precisao": "{:.1%}", "lift": "{:.1f}x", "recall": "{
 print("jornada_impossivel: lidera o ranking com n=2. Descartado.")
 print("device_compartilhado: n=14. Sugestivo, nao conclusivo. Fora de regra.")''')
 
-md("""**Armadilha 3 — as flags são do contrato inteiro, não do dia.**
-
-`parou_48h` quer dizer "aconteceu em algum momento", e `dias_inadimplencia_max`
-é o máximo do contrato. No dia da decisão o RecOps não conhece o máximo. Isso
-normalmente criaria viés: contrato de 239 dias acumula mais flag que um de 21.
-
-Testei. Não acontece nesta base — as taxas são planas ao longo da duração. Dá
-para comparar direto, sem normalizar por exposição. É artefato do dado
-sintético, e na operação real não valeria; fica registrado como premissa.""")
+md("""**Flags são do contrato inteiro, não do dia.** Isso normalmente criaria
+viés de exposição. Testei: as taxas são planas ao longo da duração, então dá
+para comparar direto. É artefato do dado sintético.""")
 
 code('''dev = df[df.desfecho == "DEVOLVIDA"].copy()
 dev["faixa"] = pd.qcut(dev.dia_desfecho, 4)
@@ -385,17 +313,12 @@ display(expo.style.format({"parou_48h": "{:.1%}", "sem_ping_24h": "{:.1%}",
                            "inad_media": "{:.1f}"}))
 print("Taxas planas entre o contrato mais curto e o mais longo: sem vies de exposicao.")''')
 
-md("""### 2.3 O alvo que faz sentido
+md("""### 2.3 Definição do alvo
 
-O case pergunta o que prediz **apropriação**. Mas `RECUPERADA_POS_ACIONAMENTO`
-é um desfecho *tratado*: aquelas motos só voltaram porque alguém agiu. Sem
-acionamento, teriam virado apropriação.
+`RECUPERADA` é desfecho tratado — sem acionamento teria virado apropriação.
 
-Modelar só `APROPRIADA` ensina a prever "perda que o RecOps não conseguiu
-evitar" — uma mistura de risco do cliente com falha operacional.
-
-**Decisão: o alvo é `APROPRIADA + RECUPERADA` (risco de perda, 16%).**
-`APROPRIADA` isolada (4,8%) vira a métrica de resultado, não o alvo.""")
+**Alvo = `APROPRIADA + RECUPERADA` (16%).** `APROPRIADA` isolada (4,8%) é a
+métrica de resultado.""")
 
 code('''fig, ax = plt.subplots(figsize=(7.5, 1.9))
 cont = df.desfecho.value_counts()
@@ -421,13 +344,9 @@ plt.tight_layout(); plt.show()''')
 
 # ============================================================ 3. PERGUNTA 1
 md("""---
-# 3. Pergunta 1 — Quais sinais melhor predizem a apropriação?
+# 3. Pergunta 1 — Sinais""")
 
-O enunciado avisa que sinal de telemetria pode ter causa inocente: moto na
-garagem fica horas sem mandar ping. O aviso está certo, e os números mostram
-que ele é ainda mais forte do que parece.""")
-
-md("""### 3.1 Sozinho, quase nenhum sinal significa alguma coisa""")
+md("""### 3.1 Sinal isolado vs. combinado""")
 
 code('''def bloco(mask, rotulo):
     n = int(mask.sum())
@@ -456,18 +375,10 @@ display(comp.style.format({"taxa_apropriacao": "{:.1%}", "taxa_risco": "{:.1%}"}
 
 print(f"base de comparacao: {pct(TX_APR)} de apropriacao")''')
 
-md("""Os três zeros dizem tudo:
+md("""Três condições com **zero perdas**: moto parada sem estar muda (71 casos),
+blindagem violada sem telemetria ruim (25) e inadimplência ≥30d sozinha (24).""")
 
-- **Moto parada sem estar muda: 0 perdas em 71 casos.** É a moto na garagem que
-  o enunciado descreve.
-- **Blindagem violada sem telemetria ruim: 0 em 25.**
-- **Inadimplência acima de 30 dias, sozinha: 0 em 24.** Isso é aperto
-  financeiro, não intenção de ficar com a moto.
-
-Cliente que atrasa pagamento e continua rodando está trabalhando para pagar.
-Quem some com a moto para de rodar e some do rastreador ao mesmo tempo.""")
-
-md("""### 3.2 A tabela que resume o case""")
+md("""### 3.2 Matriz `parou_48h` × `sem_ping_24h`""")
 
 code('''fig, ax = plt.subplots(figsize=(6.2, 4.2))
 M = np.zeros((2, 2)); N = np.zeros((2, 2), dtype=int)
@@ -496,19 +407,10 @@ plt.tight_layout(); plt.show()
 
 print(f"Uma celula sozinha concentra {int(df.APR[tel2].sum())} das {int(df.APR.sum())} perdas da base.")''')
 
-md("""Não é gradiente. É um salto.
+md("""Três células ficam perto de zero; a quarta vai a 43,8%. Alarme em `parou_48h`
+sozinho gera 71 acionamentos sem nenhuma perda.""")
 
-Três das quatro células ficam em torno de zero. A quarta — moto parada **e**
-rastreador mudo — vai para 43,8%. Nenhum dos dois sinais isolados chega perto
-disso.
-
-A leitura operacional: **o par é o sinal.** Alarme em cima de `parou_48h`
-sozinho gera 71 acionamentos que não viram perda nenhuma. É exatamente o que
-consome a equipe hoje.""")
-
-md("""### 3.3 O ranking, com o tamanho da amostra à vista
-
-Ranking de lift sem mostrar o `n` engana. Este mostra.""")
+md("""### 3.3 Lift por sinal""")
 
 code('''r = rank.sort_values("lift", ascending=True)
 fig, ax = plt.subplots(figsize=(9, 4.2))
@@ -527,31 +429,26 @@ ax.set_title("Cinza = amostra pequena demais para virar regra", loc="left")
 limpa(ax, y=False)
 plt.tight_layout(); plt.show()''')
 
-md("""### Resposta à pergunta 1
+md("""### Resposta
 
-**Não existe um sinal que prediga apropriação.** Existe uma combinação.
+O preditor é o par `parou_48h` + `sem_ping_24h`: **43,8%** de apropriação contra
+4,8% da base, capturando **21 das 24 perdas**.
 
-O par `parou_48h` + `sem_ping_24h` é o preditor real: leva a apropriação em
-**43,8%** dos casos contra 4,8% da base, e captura **21 das 24 perdas**. A
-inadimplência funciona como amplificador — sobe para 63,3% com 15 dias ou mais,
-e 81,2% com 30 ou mais — mas sozinha não prediz nada.
+Inadimplência é amplificador: 63,3% com ≥15d, 81,2% com ≥30d. Sozinha, nada.
 
-`violacao_blindagem` merece nota separada. Sozinha não vale (0 em 25), mas
-somada à telemetria ruim leva o risco de perda a **91,7%**. É agravante, não
-gatilho.
+`violacao_blindagem` sozinha não vale (0 em 25), mas com telemetria ruim leva o
+risco a **91,7%**.
 
-Fora da regra: `jornada_impossivel` (n=2) e `device_compartilhado` (n=14), por
-tamanho de amostra. E nada de perfil — sexo, idade, caução e tipo de pacote têm
-lift próximo de 1 e desaparecem dentro do grupo crítico.""")
+Fora da regra: `jornada_impossivel` (n=2), `device_compartilhado` (n=14) e as
+variáveis de perfil (lift ≈ 1).""")
 
 
 # ============================================================ 4. PERGUNTA 2
 md("""---
-# 4. Pergunta 2 — A janela entre o primeiro sinal e a perda
+# 4. Pergunta 2 — Janela
 
-A janela é `dia_desfecho - dia_primeiro_sinal`. Vale lembrar o que o
-`dia_primeiro_sinal` cobre de fato: eu reconstruí a regra que liga esse relógio
-e ela aparece na seção 7 — nem todo sinal o dispara.""")
+`janela = dia_desfecho - dia_primeiro_sinal`. Nem todo sinal liga esse relógio;
+a regra reconstruída está na seção 7.""")
 
 code('''jan = df[df.tem_sinal].groupby("desfecho").janela.describe(
     percentiles=[.1, .25, .5, .75, .9])
@@ -612,54 +509,35 @@ print("acumulado de perdas apos o 1o sinal")
 for d in [3, 5, 7, 10, 14]:
     print(f"  ate {d:>2} dias : {pct((ap<=d).mean(),1):>6}  ({int((ap<=d).sum())} de {len(ap)})")''')
 
-md("""### Resposta à pergunta 2
+md("""### Resposta
 
-**A janela média é de 8,7 dias; a mediana, 9.** Mas a média não é o número
-interessante — a dispersão é.
+**Média 8,7 dias, mediana 9.** As 23 perdas com sinal caem todas entre o dia 5
+e o dia 12.
 
-As 23 perdas com sinal caem todas entre o **dia 5 e o dia 12**. Nenhuma antes,
-nenhuma depois. É uma faixa estreita, e ela define o orçamento de tempo do
-processo inteiro: detecção, entrada na fila, contato, decisão de busca.
+| prazo de contato | perdas já ocorridas |
+|---|---|
+| **72 horas** | **0%** |
+| 5 dias | 8,7% |
+| 7 dias | 26,1% |
+| 10 dias | 82,6% |
 
-**O que isso significa para o desenho do acionamento:**
+**SLA do G1 = 72 horas** — o único prazo em que nenhuma perda tinha acontecido.
 
-| prazo de contato | perdas que já aconteceram | leitura |
-|---|---|---|
-| **72 horas** | **0%** | chega antes de todas |
-| 5 dias | 8,7% | ainda salva 91% |
-| 7 dias | 26,1% | um quarto já foi |
-| 10 dias | 82,6% | tarde demais |
-
-**O SLA do grupo crítico é 72 horas.** Não por conservadorismo: é o único prazo
-em que nenhuma perda da base tinha acontecido ainda.
-
-Um cuidado ao ler isso. A janela sozinha **não separa** perda de recuperação —
-recuperadas têm mediana de 11 dias, faixa sobreposta. Isso acontece porque a
-janela da recuperada inclui o tempo que a equipe levou para agir. O que separa
-não é a duração, é o teto: **nenhuma perda passou do dia 12**.
-
-E a comparação com devolução normal mostra por que dá para triar. Locação que
-termina bem tem mediana de 51 dias entre sinal e fim, com cauda até 218. Sinal
-que já está velho há semanas quase nunca é perda.""")
+Duas ressalvas: a janela sozinha não separa perda de recuperação (mediana 11
+dias, faixas sobrepostas), porque a janela da recuperada inclui o tempo de ação
+da equipe; o que separa é o teto de 12 dias. E devolução normal tem mediana de
+51 dias, com cauda até 218 — sinal velho quase nunca é perda.""")
 
 
 # ============================================================ 5. PERGUNTA 3
 md("""---
-# 5. Pergunta 3 — Os grupos de acionamento
+# 5. Pergunta 3 — Grupos
 
-### 5.1 Os critérios que usei
+### 5.1 Critérios
 
-Montei os grupos com três regras, nesta ordem:
-
-1. **Só entra sinal com amostra que sustente.** Fora `jornada_impossivel` (n=2)
-   e `device_compartilhado` (n=14).
-2. **Nada de perfil demográfico.** Lift próximo de 1, e usar idade ou sexo para
-   decidir cobrança é problema de justiça, não só de estatística.
-3. **A regra tem que caber num cartão.** Quem usa isso é analista em turno, não
-   cientista de dados. Nada de score contínuo com dez variáveis.
-
-O corte de inadimplência em 15 dias não foi escolhido por mim: é o limiar que a
-própria operação já usa para ligar o relógio de sinal (mostro isso na seção 7).""")
+Fora da regra: `jornada_impossivel` (n=2), `device_compartilhado` (n=14) e
+perfil demográfico. Corte de inadimplência em 15d = limiar que a própria
+operação já usa para ligar o relógio de sinal (seção 7).""")
 
 code('''G1 = tel2 & (df.inad15 | df.violacao_blindagem | df.jornada_impossivel)
 G2 = (~G1) & (tel2 | ((df.parou_48h | df.sem_ping_24h) & (df.inad15 | df.violacao_blindagem)))
@@ -695,9 +573,7 @@ print(f"G1        -> {int(df.APR[G1].sum())} das {int(df.APR.sum())} perdas")
 print(f"G1+G2     -> {int(df.APR[G1|G2].sum())} das {int(df.APR.sum())} perdas, "
       f"em {pct((G1|G2).mean())} da carteira")''')
 
-md("""### 5.2 O esforço que cada grupo exige
-
-Converter volume em vazão semanal muda o que a conversa parece ser.""")
+md("""### 5.2 Esforço por grupo""")
 
 code('''fila_semana = df.tem_sinal.sum() / SEMANAS
 carteira_ativa = len(df) * df.dia_desfecho.mean() / 182
@@ -716,10 +592,7 @@ print("por semana a cada 500 locacoes encerradas (~8/dia com follow-up).")
 carga = (G1.sum() + G2.sum()) / SEMANAS
 print(f"G1+G2 = {carga:.1f} acionamentos/semana = {carga/40:.0%} dessa capacidade.")''')
 
-md("""### 5.3 A fila está ordenada ao contrário
-
-Este é o achado que muda o diagnóstico. Olhando a taxa de sucesso do
-acionamento por grupo:""")
+md("""### 5.3 A fila está invertida""")
 
 code('''ef = []
 for nome, m in [("G1", G1), ("G2", G2), ("G3", G3), ("fora", G0)]:
@@ -744,23 +617,15 @@ ax.set_title("O time acerta onde não importa e erra onde importa", loc="left")
 limpa(ax, x=False)
 plt.tight_layout(); plt.show()''')
 
-md("""O time recupera quase tudo no G3 — onde a perda realizada é de 1% e o
-volume é de 7,2 casos por semana. E falha na maioria do G1, onde 9 em cada 10
-casos viram perda ou exigem busca.
+md("""Sucesso alto no G3 (risco quase zero) e baixo no G1 (onde 9 em cada 10
+vira perda ou busca). Não é falta de gente — é ordem de fila: com 9,7 sinais
+por semana em ordem de chegada, o caso crítico entra atrás de seis inofensivos.
 
-**Não é falta de competência nem de gente. É ordem de fila.** Com 9,7 sinais por
-semana chegando e atendimento por ordem de chegada, o caso crítico entra atrás
-de seis casos inofensivos. Quando alguém liga, já passou do dia 12.
+Ressalva: `RECUPERADA` só existe porque a equipe agiu, então o contrafactual do
+G3 não é observável. O que é sólido é a assimetria — **19 das 24 perdas estão
+no G1**.""")
 
-Uma ressalva honesta: `RECUPERADA` só existe porque a equipe agiu, então não dá
-para afirmar quantas das 30 recuperações do G3 teriam virado perda sozinhas — o
-contrafactual não é observável nesta base. O que é sólido é a assimetria: **19
-das 24 perdas estão no G1**, e é lá que o sucesso desaba.""")
-
-md("""### 5.4 Onde cortar a fila
-
-Ordenei todas as locações por um score simples e olhei quanto de risco cada
-tamanho de fila captura. A pergunta é onde parar.""")
+md("""### 5.4 Onde cortar a fila""")
 
 code('''df["score"] = (df.parou_48h.astype(int) * 2 + df.sem_ping_24h.astype(int) * 2
                + df.violacao_blindagem.astype(int) + df.inad15.astype(int)
@@ -802,65 +667,23 @@ display(curva[curva["top N"].isin([25, 30, 40, 65, 130, 253])]
         .style.format({"% carteira": "{:.1%}", "casos/semana": "{:.1f}",
                        "recall risco": "{:.0%}", "recall perdas": "{:.0%}"}))''')
 
-md("""A curva vermelha satura no **top 40**: dali em diante, dobrar ou triplicar
-a fila não captura **nenhuma perda a mais**. Passar de 40 para 130 acionamentos
-semanais adiciona 90 contatos e zero motos salvas.
+md("""A curva satura no **top 40**: daí em diante, dobrar a fila não captura
+nenhuma perda a mais. É a justificativa numérica do corte.""")
 
-Esse platô é a justificativa numérica do corte. Não escolhi o tamanho do grupo
-por sensação de capacidade — escolhi onde o retorno acaba.""")
+md("""### Resposta
 
-md("""### Resposta à pergunta 3
+| grupo | regra | esforço | por quê |
+|---|---|---|---|
+| **G1 · 1,2/sem · risco 90%** | parada + sem ping + (inad ≥15d ou blindagem) | SLA 72h, contato ativo, busca preparada em paralelo | 19 das 24 perdas estão aqui |
+| **G2 · 1,3/sem · risco 54%** | dois sinais, sem agravante | mensagem em até 5 dias, liga só se não responder | metade vira risco real |
+| **G3 · 7,2/sem · risco 17%** | um sinal isolado | régua automática, sem gente, sobe se aparecer 2º sinal | 74% da fila, 2 perdas em 187 casos |
 
-Três grupos, nesta ordem:
-
----
-
-**G1 — Crítico · 1,2 caso/semana · 90% de risco**
-`parou_48h` **e** `sem_ping_24h` **e** (`inadimplência ≥ 15d` **ou** `blindagem
-violada`)
-
-Contém 19 das 24 perdas. **SLA de 72 horas**, contato ativo por telefone, e
-autorização de busca já preparada em paralelo — não depois do contato falhar.
-Esforço: quase nada em volume, muito em prioridade. É 1,2 caso por semana; cabe
-em qualquer equipe.
-
-**Por que é o primeiro:** maior concentração de perda, e a janela mais apertada.
-
----
-
-**G2 — Alto · 1,3 caso/semana · 54% de risco**
-Dois sinais de telemetria, sem o agravante do G1.
-
-Contato em até 5 dias, pode ser por canal mais barato — mensagem com
-confirmação de leitura, e ligação só se não responder. Metade vira risco real,
-metade se resolve sozinha.
-
-**Por que é o segundo:** risco relevante, mas metade dos contatos seria
-desperdício se tratado com o esforço do G1.
-
----
-
-**G3 — Vigiar · 7,2 casos/semana · 17% de risco**
-Um sinal isolado.
-
-**Sem gente.** Régua automática: push no app, SMS, e só sobe para humano se um
-segundo sinal aparecer. É 74% da fila e concentra 2 perdas em 187 casos — tratar
-isso com ligação é queimar a capacidade que o G1 precisa.
-
-**Por que é o terceiro:** volume alto, risco baixo. É exatamente o que consome a
-equipe hoje.
-
----
-
-**G1 + G2 = 13% da carteira e 21 das 24 perdas**, a 2,5 acionamentos por semana.""")
+**G1 + G2 = 13% da carteira e 21 das 24 perdas**, a 2,5 acionamentos/semana.""")
 
 
 # ============================================================ 6. METAS
 md("""---
-# 6. Metas e critérios
-
-O enunciado pede que as metas e os critérios fiquem documentados. Estes são os
-meus, com o número que cada um persegue e como se verifica.""")
+# 6. Metas e critérios""")
 
 code('''metas = pd.DataFrame([
     {"o que": "SLA de contato no G1", "meta": "72h desde o 1º sinal",
@@ -884,32 +707,21 @@ code('''metas = pd.DataFrame([
 ])
 display(metas.style.hide(axis="index"))''')
 
-md("""**Critério de parada da fila:** acionar até o ponto em que o próximo
-contato ainda captura perda. Nesta base isso é o top 40 semanal. Se a operação
-tiver mais capacidade, ela **não** deve ser gasta alargando a fila — deve ir
-para reduzir o tempo de resposta do G1.
+md("""**Parada da fila:** top 40/semana — além disso, capacidade extra vai
+para reduzir o tempo de resposta do G1, não para alargar a fila.
 
-**Critério de promoção entre grupos:** um caso do G3 sobe para G2 assim que um
-segundo sinal aparece. Um caso do G2 sobe para G1 quando ganha inadimplência de
-15 dias ou violação de blindagem. A régua é sempre o par de sinais, nunca o
-tempo parado sozinho.
+**Promoção entre grupos:** G3 → G2 com um 2º sinal; G2 → G1 com inadimplência
+≥15d ou blindagem violada.
 
-**Critério de revisão:** se a precisão do G1 cair abaixo de 50% por dois meses
-seguidos, os limiares foram contaminados e precisam ser recalculados. Regra boa
-hoje não é regra boa para sempre — principalmente quando ela muda o
-comportamento que estava medindo.""")
+**Revisão:** se a precisão do G1 cair abaixo de 50% por 2 meses seguidos, os
+limiares precisam ser recalculados.""")
 
 
 # ============================================================ 7. EXTRAS
 md("""---
-# 7. Além do que foi pedido
+# 7. Extras""")
 
-Três coisas que apareceram no caminho e que valem mais que a resposta formal.""")
-
-md("""### 7.1 Dois sinais não ligam o relógio — e isso é um bug de detecção
-
-Testei qual regra preenche o campo `dia_primeiro_sinal` e reconstruí ela com uma
-única divergência em 500 linhas.""")
+md("""### 7.1 Falha de detecção: dois sinais não ligam o relógio""")
 
 code('''regra = (df.parou_48h | df.sem_ping_24h | df.jornada_impossivel | (df.inad >= 15))
 print(f"divergencias entre a regra reconstruida e o campo real: "
@@ -928,26 +740,18 @@ print(f"  blindagem            : {int((invisiveis & df.violacao_blindagem).sum()
 print(f"  device compartilhado : {int((invisiveis & df.device_compartilhado).sum())}")
 print(f"  desfechos            : {df.desfecho[invisiveis].value_counts().to_dict()}")''')
 
-md("""**`violacao_blindagem` e `device_compartilhado` não iniciam o relógio de
-sinal.** Só entram no radar de carona, quando outro sinal aparece.
+md("""`violacao_blindagem` e `device_compartilhado` não iniciam o relógio de
+sinal — só entram de carona quando outro sinal aparece. São 32 locações nunca
+vistas (todas DEVOLVIDA nesta base). Mas blindagem + telemetria ruim leva o
+risco a 91,7%: é o agravante mais forte e a operação só o vê por acaso.
 
-São 32 locações que nunca foram vistas. Nesta base todas terminaram em
-devolução, então não custou nada — e é por isso que o problema está invisível.
-Mas a blindagem violada, quando combinada com telemetria ruim, leva o risco de
-perda a 91,7%. É o agravante mais forte da base, e a operação só o enxerga
-quando já está acompanhando o caso por outro motivo.
+**Recomendação:** fazer `violacao_blindagem` iniciar o relógio sozinha. Custo:
+~1 caso a mais por semana.""")
 
-**Recomendação:** fazer `violacao_blindagem` iniciar o relógio por conta
-própria. Custo: 25 casos a mais em 6 meses, cerca de **1 por semana**.""")
+md("""### 7.2 Projeção
 
-md("""### 7.2 O que acontece se isso for aplicado
-
-A projeção tem uma premissa que eu prefiro dizer alto: ela assume que o gargalo
-do G1 é o **tempo de resposta**, não a dificuldade intrínseca do caso. Se parte
-dessas perdas for irrecuperável por natureza — cliente que planejou sumir desde
-o primeiro dia — o ganho real fica abaixo do cenário base.
-
-Por isso apresento faixa, não número único.""")
+Premissa: o gargalo do G1 é o tempo de resposta, não a dificuldade do caso.
+Por isso, faixa — não número único.""")
 
 code('''risco_g1 = int(df.RISCO[G1].sum())
 perdas_g1 = int(df.APR[G1].sum())
@@ -981,14 +785,10 @@ ax.set_title("Taxa de apropriação por cenário de melhora no G1", loc="left")
 limpa(ax, x=False)
 plt.tight_layout(); plt.show()''')
 
-md("""No cenário base a taxa volta para perto de onde estava antes da alta que
-motivou o case — e o esforço para chegar lá é de 2,5 acionamentos por semana,
-com prioridade certa.""")
+md("""No cenário base a taxa volta para perto do nível anterior à alta, com
+2,5 acionamentos/semana de esforço.""")
 
-md("""### 7.3 Cartão de triagem
-
-O que o analista precisa ter na tela. Cabe em meia página e não menciona
-estatística.""")
+md("""### 7.3 Cartão de triagem""")
 
 code('''cartao = textwrap.dedent(f"""
 +--------------------------------------------------------------------+
@@ -1024,42 +824,24 @@ print(cartao)''')
 md("""---
 # 8. Limitações
 
-O que esta análise **não** sustenta:
-
-**São 24 eventos de perda.** Todo corte por filial, regional ou perfil chega em
-grupos de 10 a 15 casos. A regional Nordeste 1 aparece com 10,4% de apropriação
-contra 1,5% da Sudeste 1, e converte o dobro dado o mesmo sinal — mas são 15
-casos. Trato como hipótese a investigar, não como conclusão.
-
-**A base só tem locações encerradas.** Contratos em curso, inclusive os de alto
-risco ainda vivos, não estão aqui. A taxa real tende a ser maior que a
-observada.
-
-**As flags são agregados de contrato, não estado do dia.** Verifiquei que não há
-viés de exposição nesta base, mas isso é artefato do dado sintético. Numa base
-real seria preciso reconstruir cada sinal no tempo antes de aplicar a regra.
-
-**`RECUPERADA` é desfecho tratado.** O contrafactual não é observável: não dá
-para saber quantas recuperações teriam virado perda sem acionamento. Por isso
-uso a assimetria entre grupos, não o número absoluto de recuperações, como
-evidência.
-
-**Os dados são sintéticos.** Os limiares — 48h, 24h, 15 dias — não devem ser
-transplantados para produção sem recalibrar. O que vale transplantar é o
-método: procurar a conjunção, não o sinal isolado; medir a janela; e cortar a
-fila onde a curva satura.
-
-**O que eu pediria antes de rodar isso de verdade:** custo de um acionamento,
-custo de uma moto perdida e capacidade real da equipe. Com esses três números a
-priorização deixa de ser por risco e passa a ser por valor esperado, que é a
-forma certa de fazer.""")
+- **24 eventos de perda.** Cortes por filial/regional/perfil chegam a grupos de
+  10-15 casos — hipótese, não conclusão (ex.: Nordeste 1 com 10,4% de
+  apropriação vs. 1,5% da Sudeste 1).
+- **Só locações encerradas.** Contratos de risco ainda em curso não entram; a
+  taxa real tende a ser maior.
+- **Flags são agregadas do contrato**, não estado do dia. Sem viés de exposição
+  nesta base (verificado), mas é artefato do dado sintético.
+- **`RECUPERADA` é desfecho tratado** — contrafactual não observável.
+- **Dados sintéticos.** Os limiares (48h, 24h, 15 dias) não devem ser
+  transplantados sem recalibrar; o método sim — conjunção > sinal isolado,
+  medir a janela, cortar onde a curva satura.
+- Faltam três números para priorizar por valor esperado em vez de risco: custo
+  de um acionamento, custo de uma moto perdida, capacidade real da equipe.""")
 
 
 # ============================================================ 9. APENDICE
 md("""---
-# 9. Apêndice técnico
-
-Tabelas completas para quem quiser conferir os números do texto.""")
+# 9. Apêndice""")
 
 code('''print("=" * 64)
 print("DISTRIBUICAO DOS DESFECHOS")
@@ -1113,18 +895,8 @@ for col in ["sexo", "faixa_idade", "faixa_caucao", "pacote_tipo", "dist_base_km"
 perfil = pd.DataFrame(perfil).sort_values("lift", ascending=False)
 display(perfil.style.format({"taxa": "{:.1%}", "lift": "{:.2f}x"}))''')
 
-md("""### Reprodutibilidade
-
-Este notebook roda de cima para baixo sem estado escondido. Todo número do texto
-sai das células acima — nenhum foi digitado à mão.
-
-**Não há modelo treinado, e isso é deliberado.** Com 24 eventos, um classificador
-seria menos confiável que a regra e impossível de explicar para quem trabalha em
-campo. Regra explicável vence caixa-preta quando quem decide é um analista em
-turno com o cliente na linha.
-
-**Bibliotecas:** `pandas`, `numpy`, `matplotlib`. Nada além do que já vem no
-Colab.""")
+md("""Sem modelo treinado: com 24 eventos, um classificador seria menos
+confiável que a regra e impossível de explicar em campo.""")
 
 code('''import matplotlib, sys
 print(f"python     {sys.version.split()[0]}")
