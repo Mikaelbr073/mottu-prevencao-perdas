@@ -1,0 +1,30 @@
+import pandas as pd, numpy as np
+pd.set_option('display.width',250)
+df = pd.read_excel('dados -PrevencaoPerdas_Base.xlsx', sheet_name='Dados')
+
+print("=== dias_locacao vs dia_desfecho por desfecho ===")
+df['gap'] = df.dias_locacao - df.dia_desfecho
+print(df.groupby('desfecho')[['dias_locacao','dia_desfecho','gap']].describe().T.round(2).to_string())
+print()
+print("gap==0 por desfecho:")
+print(pd.crosstab(df.desfecho, df.gap==0))
+print()
+print("=== dia_primeiro_sinal presente x desfecho ===")
+df['tem_sinal'] = df.dia_primeiro_sinal.notna()
+ct = pd.crosstab(df.tem_sinal, df.desfecho, margins=True)
+print(ct)
+print((pd.crosstab(df.tem_sinal, df.desfecho, normalize='index')*100).round(1))
+print()
+print("=== Sinais: quantos por locacao ===")
+bin_cols=['parou_48h','sem_ping_24h','violacao_blindagem','device_compartilhado','jornada_impossivel']
+for c in bin_cols: df[c+'_b']=(df[c]=='SIM').astype(int)
+df['n_sinais_tel']=df[[c+'_b' for c in bin_cols]].sum(axis=1)
+print(pd.crosstab(df.n_sinais_tel, df.desfecho, margins=True))
+print((pd.crosstab(df.n_sinais_tel, df.desfecho, normalize='index')*100).round(1))
+print()
+print("=== tem_sinal vs n_sinais_tel (o campo dia_primeiro_sinal cobre inadimplencia?) ===")
+print(pd.crosstab(df.n_sinais_tel>0, df.tem_sinal))
+print()
+print("inadimplencia>0 vs tem_sinal, para n_sinais_tel==0:")
+sub=df[df.n_sinais_tel==0]
+print(pd.crosstab(sub.dias_inadimplencia_max>0, sub.tem_sinal))

@@ -1,0 +1,45 @@
+import pandas as pd, numpy as np
+pd.set_option('display.width',250)
+df = pd.read_excel('dados -PrevencaoPerdas_Base.xlsx', sheet_name='Dados')
+b=['parou_48h','sem_ping_24h','violacao_blindagem','device_compartilhado','jornada_impossivel']
+for c in b: df[c]=(df[c]=='SIM')
+df['tem_sinal']=df.dia_primeiro_sinal.notna()
+rule = df.parou_48h|df.sem_ping_24h|df.jornada_impossivel|(df.dias_inadimplencia_max>=15)
+print("### A unica divergencia da regra ###")
+print(df[rule!=df.tem_sinal][['locacao_id','dias_inadimplencia_max']+b+['dia_primeiro_sinal','dia_desfecho','desfecho']].to_string())
+print()
+print("### JANELA DE ACAO ###")
+df['janela']=df.dia_desfecho-df.dia_primeiro_sinal
+s=df[df.tem_sinal]
+print(s.groupby('desfecho').janela.describe(percentiles=[.1,.25,.5,.75,.9]).round(1).to_string())
+print()
+print("janela por desfecho - quantis detalhados (APROPRIADA):")
+ap=s[s.desfecho=='APROPRIADA'].janela
+print(sorted(ap.tolist()))
+print("\nRECUPERADA janela sorted:")
+print(sorted(s[s.desfecho=='RECUPERADA_POS_ACIONAMENTO'].janela.tolist()))
+print()
+print("### % de APROPRIADAS perdidas dentro de N dias do 1o sinal ###")
+for n in [3,5,7,10,14,21,30,45]:
+    print(f"  ate {n:>2}d: {(ap<=n).mean():6.1%} ({(ap<=n).sum()}/{len(ap)})")
+print()
+print("### Janela x tipo do 1o sinal (proxy: qual sinal presente) ###")
+for c in ['parou_48h','sem_ping_24h','violacao_blindagem']:
+    sub=s[s.desfecho=='APROPRIADA']
+    print(f"{c}: mediana janela SIM={sub[sub[c]].janela.median()} (n={sub[c].sum()}) | NAO={sub[~sub[c]].janela.median()}")
+print()
+print("### REGIONAL ###")
+t=pd.crosstab(df.regiao, df.desfecho)
+t['n']=t.sum(axis=1); t['%APR']=(t.APROPRIADA/t.n*100).round(1); t['%RISCO']=((t.n-t.DEVOLVIDA)/t.n*100).round(1)
+print(t.to_string())
+print()
+print("### FILIAL ###")
+t=pd.crosstab(df.filial, df.desfecho)
+t['n']=t.sum(axis=1); t['%APR']=(t.APROPRIADA/t.n*100).round(1); t['%RISCO']=((t.n-t.DEVOLVIDA)/t.n*100).round(1)
+print(t.sort_values('%APR',ascending=False).to_string())
+print()
+print("### Eficacia do acionamento hoje (rec / (rec+apr)) por n de sinais ###")
+df['n_sin']=df[b].sum(axis=1)
+t=pd.crosstab(df.n_sin, df.desfecho)
+t['taxa_sucesso_recop']=(t.RECUPERADA_POS_ACIONAMENTO/(t.RECUPERADA_POS_ACIONAMENTO+t.APROPRIADA)*100).round(1)
+print(t.to_string())

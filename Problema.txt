@@ -1,0 +1,34 @@
+##Contexto
+A Mottu nasceu para resolver um problema de acesso: milhares de pessoas querem trabalhar com entregas, mas não conseguem financiar uma moto pelos canais tradicionais. Hoje a empresa opera mais de 160 filiais no Brasil e no México, alugando motos por assinatura semanal ou mensal para quem usa o veículo como ferramenta de trabalho.
+
+Cada moto da frota sai da filial com um dispositivo IoT embarcado, que envia sinal de localização e movimento continuamente. Junto com o histórico financeiro do contrato, isso permite acompanhar o comportamento de cada contratação ao longo do tempo. Quando uma contratação apresenta sinais de risco, a equipe de Recuperação pode acionar o cliente e, se necessário, buscar uma moto. A maioria das locações termina em devolução normal, mas uma parcela termina em apropriação indébita: o cliente para de pagar e não devolver o veículo.
+
+No último trimestre, a taxa de apropriação de uma das regionais subiu de 3,1% para 4,8%. A equipe de RecOps tem capacidade limitada e não consegue acompanhar de perto todas as locações que apresentam algum sinal. O desafio da operação é decidir quem acompanhar e quando agir.
+
+
+##Base de dados
+O arquivo contém 500 locações encerradas nos últimos 6 meses (aba "Dados") e o dicionário de variáveis ​​(aba "Dicionário").
+
+##Desafio
+1 - Quais sinais melhor predizem a apropriação da moto? Sustente sua resposta com números extraídos da base.
+2 - Qual é a janela média, em dias, entre o primeiro sinal de risco e a perda da moto? O que essa janela significa para o desenho do acionamento?
+3 - Proponha até 3 grupos de acionamento priorizados para a equipe de RecOps, justificando a ordem escolhida e o esforço que cada grupo exige.
+
+
+
+##Definições e premissas
+Desfechos possíveis: DEVOLVIDA (devolução normal), RECUPERADA_POS_ACIONAMENTO (a equipe de RecOps agiu e recuperou a moto) e APROPRIADA (a moto foi perdida)
+
+Janela de ação = intervalo entre o dia do primeiro sinal de risco e o dia do final da locação
+
+Os dados são sintéticos, criados para este processo seletivo e não representam a operação real
+
+
+
+##lança
+Sinais de telemetria podem ter causas benignas. Uma moto guardada na garagem, por exemplo, pode ficar horas sem enviar sinal sem que isso represente risco;
+
+Acionar um cliente tem custo operacional. Ao propor grupos de acompanhamento, considere o tamanho de cada grupo em relação à capacidade da equipe;
+
+Documente as metas e os critérios que você desenvolveu. Será avaliada a coerência entre suas escolhas e suas conclusões.
+
