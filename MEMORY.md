@@ -8,53 +8,61 @@
 
 # ⏸ ESTADO ATUAL — ONDE CONTINUAR
 
-**Última atualização:** 2026-09-10, ~15h30. Sessão reiniciada para autenticar o `gh`.
+**Última atualização:** 2026-09-10, ~16h30.
 
 ### Onde paramos
-Análise **fechada**. Decisões de enquadramento **fechadas**. O notebook **ainda
-não foi escrito** — escrever `analise/build_notebook.py` do zero pelo roteiro
-do §9. (Um stub quebrado foi criado e removido; não procurar por ele.)
+Notebook **escrito, validado e publicado**. Repositório **público**. Base
+carrega sozinha no Colab (sem upload). PDF **ainda não iniciado**.
 
-### Decisão de fluxo (mudou — importante)
-Entrega e iteração passam a ser via **GitHub + Colab**, não upload manual.
-Motivo: o usuário apontou, com razão, que subir `.ipynb` a cada iteração não é
-fluxo de trabalho. Com repo: eu dou `git push`, ele recarrega a aba do Colab.
+### Repositório
+https://github.com/Mikaelbr073/mottu-prevencao-perdas (público)
 
-Ganho extra para o case: entregar **link de repositório com badge "Open in
-Colab"** é mais forte que arquivo solto — a banca abre em um clique e o
-histórico de commits mostra como o trabalho foi construído.
-
-### Retomar com
+Abrir no Colab:
 ```
-claude --continue
+https://colab.research.google.com/github/Mikaelbr073/mottu-prevencao-perdas/blob/main/notebook/mottu_prevencao_perdas.ipynb
 ```
 
-### Próximos passos, em ordem
-1. **`gh auth login`** — rodar num terminal normal (PowerShell/CMD fora do
-   Claude Code). É interativo e trava se rodar pelo bash da sessão.
-   Respostas: GitHub.com -> HTTPS -> Y -> Login with a web browser.
-2. Criar o repo e fazer o primeiro push
-3. Reescrever `analise/build_notebook.py` (roteiro no §9) e gerar o `.ipynb`
-4. Validar rodando local antes de publicar
-5. Push + abrir no Colab via `githubtocolab.com/<user>/<repo>/blob/main/...`
-6. Só depois: o PDF (estrutura §7c, estilo §10)
+### Feedback do usuário sobre o notebook (aplicado)
+O Colab tinha virado ensaio — texto longo, títulos de efeito ("Não é
+gradiente, é um salto"), jargão ("duas células de encanamento"). Reescrito:
+**Colab = número + gráfico, enxuto. PDF = onde vai o detalhamento.**
+Retrabalho feito via `analise/build_notebook.py`; commit
+`Enxuga o notebook e carrega a base direto do repositório`.
+
+Regra para daqui em diante: ao escrever qualquer texto do notebook, manter o
+padrão enxuto que já está lá — não reintroduzir prosa longa nem título
+"cara de IA". O PDF é que recebe o texto corrido.
+
+### Fluxo de iteração (funcionando)
+1. Editar `analise/build_notebook.py`
+2. `python analise/build_notebook.py` (regenera o `.ipynb`)
+3. Validar com o script em `scratchpad/valida.py` (roda todas as células,
+   pega erro antes de publicar) — recriar se o scratchpad tiver sido limpo,
+   é curto, está registrado no histórico da sessão
+4. `git add -A && git commit && git push`
+5. Usuário recarrega a aba do Colab
+
+### Próximos passos
+1. Construir o **PDF** — estrutura no §7c, mas agora com uma correção: o PDF
+   é quem carrega o detalhamento (texto corrido, explicação de método), com
+   **prints dos gráficos do Colab** embutidos. O link do Colab vai no fim,
+   para quem quiser conferir mais a fundo — não é o inverso.
+2. Logo da Mottu para a capa (pendente do usuário)
 
 ### Bloqueios / pendências do usuário
-- [ ] `gh auth login` num terminal normal
-- [ ] **Logo da Mottu** para a capa do PDF (só trava a etapa do PDF)
+- [ ] **Logo da Mottu** para a capa do PDF
 
 ### Estado do ambiente (verificado)
 | item | status |
 |---|---|
 | `uv` 0.12.12 | instalado |
 | `matplotlib` 3.11.1 / `nbformat` 5.11.1 | instalados |
-| `gh` 2.100.0 | instalado (`C:\Program Files\GitHub CLI\gh.exe`) — **não autenticado** |
+| `gh` 2.100.0 | autenticado como `Mikaelbr073` |
 | git user | Mikael Carvalho / mcb3@discente.ifpe.edu.br |
-| `sklearn` | ausente — e não é necessário |
-| Análise + scripts | `MEMORY.md` + `analise/` (9 scripts, todos OK) |
-| Notebook | **não iniciado** |
-| PDF | **não iniciado** |
-| `colab-mcp` | **abandonado** — ver §7e |
+| Repositório | público, `main`, sincronizado |
+| Notebook | 62 células, 25 de código, todas validadas |
+| `colab-mcp` | abandonado — ver §7e |
+| PDF | não iniciado |
 
 ---
 
